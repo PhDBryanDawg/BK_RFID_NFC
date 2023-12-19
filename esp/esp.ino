@@ -20,12 +20,12 @@
 //erzeugen einer Objektinstanz
 MFRC522 mfrc522(SS_PIN, RST_PIN);
 
-const char WIFI_SSID[] = "YOUR_WIFI_SSID";
-const char WIFI_PASSWORD[] = "YOUR_WIFI_PASSWORD";
+const char WIFI_SSID[] = "wahofr";
+const char WIFI_PASSWORD[] = "wahofr24";
 
-String HOST_NAME = "http://192.168.0.19"; // change to your PC's IP address
-String PATH_NAME   = "/read.php";
-String queryString = "?serial=30.5";
+String HOST_NAME = "http://l3onh.xyz"; // change to your PC's IP address
+String PATH_NAME   = "/rfidscan";
+String queryString = "?id=100000";
 
 void setup() {
   Serial.begin(115200); 
@@ -91,7 +91,7 @@ void loop() {
 
 
   // DB Abfrage
-  String queryString = "?serial="+"newRfidId";
+  String queryString = "?serial="+newRfidId;
 
   HTTPClient http;
 
@@ -115,8 +115,10 @@ void loop() {
   http.end();
 
 //anfrage an server is da, antwort?
-
   }
+
+  
+
 
 
 
