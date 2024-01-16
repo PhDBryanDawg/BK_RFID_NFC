@@ -4,8 +4,8 @@
 #include <MFRC522.h>
 
 //definieren der Pins  RST & SDA für den ESP32
-#define RST_PIN     22
-#define SS_PIN      21
+#define RST_PIN     0
+#define SS_PIN      04
 
 //erzeugen einer Objektinstanz
 MFRC522 mfrc522(SS_PIN, RST_PIN);
@@ -18,10 +18,12 @@ void setup() {
   Serial.begin(115200);
   //eine kleine Pause von 50ms.
   delay(50);
+  Serial.println("test");
   //begin der SPI Kommunikation
   SPI.begin();
   //initialisieren der Kommunikation mit dem RFID Modul
   mfrc522.PCD_Init();
+  Serial.println("boot performed...");
 }
 
 void loop() {
