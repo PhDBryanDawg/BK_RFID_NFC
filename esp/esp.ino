@@ -14,8 +14,8 @@
 #include <HTTPClient.h>
 
 //definieren der Pins  RST & SDA für den ESP32
-#define RST_PIN     22
-#define SS_PIN      21
+#define RST_PIN     0
+#define SS_PIN      4
 
 //erzeugen einer Objektinstanz
 MFRC522 mfrc522(SS_PIN, RST_PIN);
