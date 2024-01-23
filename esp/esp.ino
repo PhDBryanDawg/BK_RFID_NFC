@@ -43,13 +43,15 @@ MFRC522 mfrc522(SS_PIN, RST_PIN);
 const char WIFI_SSID[] = "wahofr";
 const char WIFI_PASSWORD[] = "wahofr24";
 
-String HOST_NAME = "http://l3onh.xyz"; // change to your PC's IP address
-String PATH_NAME   = "/rfidscan";
-String query = "?id="                 // 
-String queryString = "?id=100000";    // test query
+String HOST_NAME = "http://theyseeme.win/esp32/"; // change to your PC's IP address
+String PATH_NAME   = "verify.php";
+String query = ""                 // 
+//String queryString = "?id=100000";    // test query
 
 const String password = "7890"; //definie PIN
 String input_password;
+
+boolean door_closed=true;
 
 void setup() {
   Serial.begin(115200); 
@@ -83,8 +85,8 @@ void setup() {
 
   HTTPClient http;
 
-  http.begin(HOST_NAME + PATH_NAME + queryString); //HTTP
-  int httpCode = http.GET();
+  http.begin(HOST_NAME + PATH_NAME); //HTTP
+  int httpCode = http.POST(query);
 
   // httpCode will be negative on error
   if(httpCode > 0) {
@@ -119,15 +121,16 @@ void loop() {
 
   Serial.print(" gelesene RFID-ID :");
   Serial.println(newRfidId);
+  query = newRfidId;
   Serial.println();
 
 
   // DB Abfrage
-  String queryString = query+newRfidId;
+  //String queryString = query+newRfidId;
 
   HTTPClient http;
 
-  http.begin(HOST_NAME + PATH_NAME + queryString); //HTTP
+  http.begin(HOST_NAME + PATH_NAME); //HTTP
   int httpCode = http.GET();
 
   // httpCode will be negative on error
@@ -146,7 +149,7 @@ void loop() {
 
   http.end();
 
-  if(){  //if Zugang gewährt
+  if(true){  //if Zugang gewährt
     door_closed=true;
     while(door_closed){
       char key = keypad.getKey();
@@ -204,4 +207,4 @@ void loop() {
 
 
 
-}
+
