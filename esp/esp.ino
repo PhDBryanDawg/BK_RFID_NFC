@@ -1,22 +1,17 @@
-/*
- * This ESP32 code is created by esp32io.com
- *
- * This ESP32 code is released in the public domain
- *
- * For more detail (instruction and wiring diagram), visit https://esp32io.com/tutorials/esp32-mysql
- */
-//einbinden der Bibliotheken für das
-//ansteuern des MFRC522 Moduls
+#include <WiFi.h>
+#include <HTTPClient.h>
+#include <string.h>
 #include <SPI.h>
 #include <MFRC522.h>
-
 #include <Keypad.h>
 #include <LiquidCrystal_I2C.h>
+
+
+// Keypad definitions
 #define ROW_NUM     4 // four rows
 #define COLUMN_NUM  4 // four columns
 
 LiquidCrystal_I2C lcd(0x27, 16, 2); // I2C address 0x27, 16 column and 2 rows
-
 
 char keys[ROW_NUM][COLUMN_NUM] = {
   {'1', '2', '3', 'A'},
@@ -30,181 +25,209 @@ byte pin_column[COLUMN_NUM] = {26, 25, 33, 32};
 
 Keypad keypad = Keypad( makeKeymap(keys), pin_rows, pin_column, ROW_NUM, COLUMN_NUM );
 
-#include <WiFi.h>
-#include <HTTPClient.h>
 
-//definieren der Pins  RST & SDA für den ESP32
+// Network defitions
+const char SSID[] = "FritzFrost";
+const char Password[] = "wlannetzvonsektor7g";
+const String server = "http://theyseeme.win";
+
+HTTPClient http;
+String MAC;
+
+TaskHandle_t Heartbeat;
+const int heartbeatInterval = 10000;
+
+
+// Define Reader init
 #define RST_PIN     0
 #define SS_PIN      4
 
-//erzeugen einer Objektinstanz
 MFRC522 mfrc522(SS_PIN, RST_PIN);
 
-const char WIFI_SSID[] = "wahofr";
-const char WIFI_PASSWORD[] = "wahofr24";
 
-String HOST_NAME = "http://theyseeme.win/esp32/"; // change to your PC's IP address
-String PATH_NAME   = "verify.php";
-String query = ""                 // 
-//String queryString = "?id=100000";    // test query
-
-const String password = "7890"; //definie PIN
-String input_password;
-
-boolean door_closed=true;
-
-void setup() {
-  Serial.begin(115200); 
-
-  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+String ConnectWiFi() {
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(SSID, Password);
   Serial.println("Connecting");
-  while(WiFi.status() != WL_CONNECTED) {
+  while (WiFi.status() != WL_CONNECTED) {
     delay(500);
     Serial.print(".");
   }
 
-  Serial.println("");
-  Serial.print("Connected to WiFi network with IP Address: ");
-  Serial.println(WiFi.localIP());
+  IPAddress ip = WiFi.localIP();
+  String ipStr = String(ip[0]) + "." + String(ip[1]) + "." + String(ip[2]) + "." + String(ip[0]);
 
-  input_password.reserve(5);
-  lcd.init(); // initialize the lcd
-  lcd.backlight();
-  lcd.clear();              // clear display
-  lcd.setCursor(0, 0);      // move cursor to   (0, 0)
-  lcd.print("Bitte Karte");       // print message at (0, 0)
-  lcd.setCursor(0, 1);      // move cursor to   (2, 1)
-  lcd.print("System aktiv");
+  return ipStr;
+}
 
-  delay(50);
-  //begin der SPI Kommunikation
-  SPI.begin();
-  //initialisieren der Kommunikation mit dem RFID Modul
-  mfrc522.PCD_Init();
-  
+void setup() {
 
-  HTTPClient http;
+  Serial.begin(115200);
 
-  http.begin(HOST_NAME + PATH_NAME); //HTTP
-  int httpCode = http.POST(query);
+  MAC = WiFi.macAddress();
+  String ip = ConnectWiFi();
 
-  // httpCode will be negative on error
-  if(httpCode > 0) {
-    // file found at server
-    if(httpCode == HTTP_CODE_OK) {
-      String payload = http.getString();
-      Serial.println(payload);
-    } else {
-      // HTTP header has been send and Server response header has been handled
-      Serial.printf("[HTTP] GET... code: %d\n", httpCode);
-    }
-  } else {
-    Serial.printf("[HTTP] GET... failed, error: %s\n", http.errorToString(httpCode).c_str());
+  if (ip != NULL) {
+    Serial.println("");
+    Serial.println(MAC);
+    Serial.printf("Connected to WiFi network with IP Address: %s\n", ip);
   }
 
-  http.end();
+  // Send inital heartbeat
+  SendHeartbeat(&http, &MAC, true);
+
+  xTaskCreatePinnedToCore(
+    loop2,       /* Function to implement the task */
+    "Heartbeat", /* Name of the task */
+    10000,       /* Stack size in words */
+    NULL,        /* Task input parameter */
+    0,           /* Priority of the task */
+    &Heartbeat,  /* Task handle. */
+    0);          /* Core where the task should run */
+
+  // init lcd
+  lcd.init(); // initialize the lcd
+  lcd.backlight();
+  int pos[] = {0,0};
+  LCDMessage("Test", pos, true);
+
+
+  // init RFID
+  SPI.begin();
+  mfrc522.PCD_Init();
 }
 
 void loop() {
 
+  // Look for new cards
+  if ( ! mfrc522.PICC_IsNewCardPresent()) 
+  {
+    return;
+  }
+  // Select one of the cards
+  if ( ! mfrc522.PICC_ReadCardSerial()) 
+  {
+    return;
+  }
+  //Show UID on serial monitor
+  Serial.print("UID tag :");
+  String RFID= "";
+  byte letter;
 
-  if (mfrc522.PICC_ReadCardSerial()) {
-   //Lesen, DB abfragen, schalten.
-    String newRfidId = "";
-    for (byte i = 0; i < mfrc522.uid.size; i++) {
-    newRfidId.concat(mfrc522.uid.uidByte[i] < 0x10 ? " 0" : " ");
-    newRfidId.concat(String(mfrc522.uid.uidByte[i], HEX));
+  for (byte i = 0; i < mfrc522.uid.size; i++) 
+  {
+    RFID.concat(String(mfrc522.uid.uidByte[i] < 0x10 ? "0" : ""));
+    RFID.concat(String(mfrc522.uid.uidByte[i], HEX));
+    if (i < mfrc522.uid.size-1)
+    {
+      RFID.concat(String(":"));
+    }
   }
 
-  //alle Buchstaben in Großbuchstaben umwandeln
-  newRfidId.toUpperCase();
+  RFID.toUpperCase();
+  Serial.println(RFID);
 
-  Serial.print(" gelesene RFID-ID :");
-  Serial.println(newRfidId);
-  query = newRfidId;
-  Serial.println();
+  bool accepted = VerifyKey(&http, &RFID, &MAC);
+
+  if (accepted)
+  {
+    Serial.println("ACCEPTED");
+  }
+  else
+  {
+    Serial.println("DECLINED");
+  }
+
+  delay(5000);
+
+}
+
+void loop2(void *parameter) {
+  for (;;) {
+    SendHeartbeat(&http, &MAC, false);
+    delay(heartbeatInterval);
+  }
+}
 
 
-  // DB Abfrage
-  //String queryString = query+newRfidId;
+void SendHeartbeat(HTTPClient *http, const String *MAC, bool output) {
+  const String uri = "/esp32/heartbeat.php";
 
-  HTTPClient http;
+  http->begin(server + uri);
+  http->addHeader("Content-Type", "application/x-www-form-urlencoded");
+  String params = "MAC='" + String(*MAC) + "'";
 
-  http.begin(HOST_NAME + PATH_NAME); //HTTP
-  int httpCode = http.GET();
+  int httpCode = http->POST(params);
 
-  // httpCode will be negative on error
-  if(httpCode > 0) {
+
+  if (output == true) {
+    if (httpCode > 0 && output == true) {
+      // file found at server
+      if (httpCode == HTTP_CODE_OK) {
+        String payload = http->getString();
+        Serial.println(payload);
+      } else {
+        // HTTP header has been send and Server response header has been handled
+        Serial.printf("[HTTP] GET... code: %d\n", httpCode);
+      }
+    } else {
+      Serial.printf("[HTTP] GET... failed, error: %s\n", http->errorToString(httpCode).c_str());
+    }
+  }
+
+  http->end();
+}
+
+
+bool VerifyKey(HTTPClient *http, String *key, const String *MAC) {
+  const String uri = "/esp32/verify.php";
+
+  http->begin(server + uri);
+  http->addHeader("Content-Type", "application/x-www-form-urlencoded");
+  String params = "MAC='" + String(*MAC) + "'&RFID=" + String(*key);
+
+  int httpCode = http->POST(params);
+
+
+  if (httpCode > 0) {
     // file found at server
-    if(httpCode == HTTP_CODE_OK) {
-      String payload = http.getString();
-      Serial.println(payload);
+    if (httpCode == HTTP_CODE_OK) {
+      String result = http->getString();
+      
+      char inputCopy[200];
+      strcpy(inputCopy, result.c_str());
+
+      char tokens[3][50];
+
+      char *token = strtok(inputCopy, "***");
+      token = strtok(NULL, "***");
+
+      if (strcmp(token, "1") == 0 ){
+        return true;
+      } else {
+        return false;
+      }
+
     } else {
       // HTTP header has been send and Server response header has been handled
       Serial.printf("[HTTP] GET... code: %d\n", httpCode);
+      return false;
     }
   } else {
-    Serial.printf("[HTTP] GET... failed, error: %s\n", http.errorToString(httpCode).c_str());
+    Serial.printf("[HTTP] GET... failed, error: %s\n", http->errorToString(httpCode).c_str());
   }
 
-  http.end();
+  http->end();
 
-  if(true){  //if Zugang gewährt
-    door_closed=true;
-    while(door_closed){
-      char key = keypad.getKey();
+  return false;
+}
 
-  if (key) {
-    //Serial.println(key);
-  
-    if (key == '*') {
-      input_password = ""; // clear input password
-    } else if (key == '#') {
-      if (password == input_password) {
-        Serial.println("The password is correct, ACCESS GRANTED!");
-        lcd.clear();              // clear display
-        lcd.setCursor(0, 0);      // move cursor to   (0, 0)
-        lcd.print("The password is correct");       // print message at (0, 0)
-        lcd.setCursor(2, 1);      // move cursor to   (2, 1)
-        lcd.print("ACCESS GRANTED!"); // print message at (2, 1)
-        door_closed=false;
-        delay(200);
 
-      } else {
-        Serial.println("The password is incorrect, ACCESS DENIED!");
-        lcd.clear();              // clear display
-        lcd.setCursor(0, 0);      // move cursor to   (0, 0)
-        lcd.print("The password is incorrect");       // print message at (0, 0)
-        lcd.setCursor(2, 1);      // move cursor to   (2, 1)
-        lcd.print("ACCESS DENIED!"); // print message at (2, 1)
-        delay(200);
-      }
-
-      input_password = ""; // clear input password
-    } else {
-      input_password += key; // append new character to input password string
-    }
+void LCDMessage(String message, int* cur, bool clearOnRun)
+{
+  if (clearOnRun) {
+    lcd.clear();
   }
-    }
-    }
-  }
-
-//anfrage an server is da, antwort?
-  }
-
-  
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+  lcd.setCursor(cur[0], cur[1]);
+  lcd.print(message);
+}
